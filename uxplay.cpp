@@ -210,6 +210,7 @@ static std::string rtp_pipeline = "";
 static std::string audio_rtp_pipeline = "";
 static GMainLoop *gmainloop = NULL;
 static bool mux_to_file = false;
+static float mux_width = 0, mux_height = 0;   /* last recorded video size */
 static std::string mux_filename = "recording";
 static bool raspberry_pi_hls_support = false;
 static std::string custom_profile_string = "";
@@ -2641,6 +2642,7 @@ extern "C" void conn_destroy (void *cls) {
         }
         if (mux_to_file) {
             mux_renderer_stop();
+            mux_width = mux_height = 0;
         }
     }
 }
@@ -2877,6 +2879,16 @@ extern "C" void audio_get_format (void *cls, unsigned char *ct, unsigned short *
 }
 
 extern "C" void video_report_size(void *cls, float *width_source, float *height_source, float *width, float *height) {
+    if (mux_to_file) {
+        /* a size change (client rotated) cannot continue in the same mp4 file */
+        if ((mux_width || mux_height) && (*width_source != mux_width || *height_source != mux_height)) {
+            LOGI("video size changed %.0fx%.0f -> %.0fx%.0f: continuing recording in a new file",
+                 mux_width, mux_height, *width_source, *height_source);
+            mux_renderer_new_segment();
+        }
+        mux_width = *width_source;
+        mux_height = *height_source;
+    }
     if (use_video) {
         video_renderer_size(width_source, height_source, width, height);
     }
@@ -3701,6 +3713,7 @@ int main (int argc, char *argv[]) {
         }
         if (mux_to_file) {
             mux_renderer_stop();
+            mux_width = mux_height = 0;
         }
         goto reconnect;
     } else {

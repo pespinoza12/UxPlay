@@ -257,25 +257,9 @@ void mux_renderer_push_audio(unsigned char *data, int data_len, uint64_t ntp_tim
     if (!renderer->audio_started && renderer->first_video_time != GST_CLOCK_TIME_NONE) {
         renderer->audio_started = TRUE;
         renderer->first_audio_time = (GstClockTime)ntp_time;
-        if (renderer->first_audio_time > renderer->first_video_time) {
-            GstClockTime silence_duration = renderer->first_audio_time - renderer->first_video_time;
-            guint64 num_samples = (silence_duration * 44100) / GST_SECOND;
-            gsize silence_size = num_samples * 2 * 2;            
-            GstBuffer *silence_buffer = gst_buffer_new_allocate(NULL, silence_size, NULL);
-            if (silence_buffer) {
-                GstMapInfo map;
-                if (gst_buffer_map(silence_buffer, &map, GST_MAP_WRITE)) {
-                    memset(map.data, 0, map.size);
-                    gst_buffer_unmap(silence_buffer, &map);
-                }
-                GST_BUFFER_PTS(silence_buffer) = 0;
-                GST_BUFFER_DTS(silence_buffer) = 0;
-                GST_BUFFER_DURATION(silence_buffer) = silence_duration;
-                gst_app_src_push_buffer(GST_APP_SRC(renderer->audio_appsrc), silence_buffer);
-                logger_log(logger, LOGGER_DEBUG, "Inserted %.2f seconds of silence before audio", 
-                          (double)silence_duration / GST_SECOND);
-            }
-        }
+        /* No synthetic silence here: the track is AAC-ELD, and raw PCM zeros pushed
+         * into it become one undecodable multi-megabyte "packet". The first real
+         * packet keeps its true PTS and the muxer records the late start. */
     }
 
     GstBuffer *buffer = gst_buffer_new_allocate(NULL, data_len, NULL);
@@ -332,6 +316,19 @@ void mux_renderer_stop(void) {
     logger_log(logger, LOGGER_INFO, "Stopped recording");
     audio_is_alac = FALSE;
     video_is_h265 = FALSE;
+}
+
+/* called when the mirrored video changes size (e.g. the client rotates):
+ * mp4mux cannot follow a resolution change inside one file, so the current
+ * file is finalised and recording continues in a new one (fn.N+1). */
+void mux_renderer_new_segment(void) {
+    if (!renderer || !renderer->pipeline) return;
+    gboolean was_h265 = renderer->is_h265;
+    gboolean was_alac = renderer->is_alac;
+    mux_renderer_stop();
+    video_is_h265 = was_h265;
+    audio_is_alac = was_alac;
+    mux_renderer_start();
 }
 
 void mux_renderer_destroy(void) {

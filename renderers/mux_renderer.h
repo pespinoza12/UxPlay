@@ -35,6 +35,7 @@ void mux_renderer_choose_video_codec(bool is_h265);
 void mux_renderer_push_video(unsigned char *data, int data_len, uint64_t ntp_time);
 void mux_renderer_push_audio(unsigned char *data, int data_len, uint64_t ntp_time);
 void mux_renderer_stop(void);
+void mux_renderer_new_segment(void);
 void mux_renderer_destroy(void);
 
 #ifdef __cplusplus
